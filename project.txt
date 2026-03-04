@@ -1,0 +1,16 @@
+VitalScan health risk web app.
+STACK: React+Vite+Tailwind, FastAPI, PostgreSQL, Redis, Scikit-learn, Recharts.
+INPUTS: age,sex,height,weight,waist_cm,physical_activity,sleep_hours,
+stress_level,family_history_heart,smoking_status,fried_food,
+chest_discomfort,salt_intake,family_history_diab,sugar_intake,
+water_intake,excessive_thirst.
+FEATURES:
+1.Single form→3 simultaneous predictions:
+-Heart risk (GradientBoosting .pkl)
+-Diabetes risk (GradientBoosting .pkl)
+-Obesity risk (WHO BMI+WHR formula)
+2.Dashboard:3 color-coded scores(green/yellow/red)+top risk factors.
+3.Live sliders→instant score updates via Redis.
+4.Priority-ranked preventive action plan.
+DISCLAIMER every page:"Educational only.Not medical diagnosis.
+Consult a doctor."
