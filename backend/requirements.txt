@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+slowapi
+firebase-admin
+redis
+python-dotenv
+joblib
+numpy
+scikit-learn
+pandas
+pydantic

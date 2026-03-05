@@ -1,0 +1,12 @@
+serviceAccountKey.json
+.env
+__pycache__/
+*.pkl
+*.csv
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+dist/
+build/

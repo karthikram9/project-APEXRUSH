@@ -1,23 +1,23 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { submitPrediction } from '../api';
+import { useNavigate, useParams } from 'react-router-dom';
+import { predictRisk, sendAlert } from '../api';
 import { Mic, MicOff, Activity, ChevronDown } from 'lucide-react';
 
 /* ─────────────────────────────────────────────
    Encoding maps  (label → API integer)
 ───────────────────────────────────────────── */
 const ENC = {
-    physical_activity: { Sedentary: 0, Light: 1, Moderate: 2, Active: 3 },
-    stress_level: { Low: 0, Moderate: 1, High: 2 },
-    fried_food: { Low: 0, Moderate: 1, High: 2 },
-    family_history_heart: { 'Not Applicable': 0, Yes: 1 },
-    family_history_diab: { 'Not Applicable': 0, Yes: 1 },
-    chest_discomfort: { 'Not Applicable': 0, Moderate: 1, Often: 2 },
-    salt_intake: { Low: 0, Moderate: 1, High: 2 },
-    sugar_intake: { Low: 0, Moderate: 1, High: 2 },
-    water_intake: { 'Less than 1 Litre': 0, '1–2 Litres': 1, '3–4 Litres': 2, 'More than 4 Litres': 3 },
-    excessive_thirst: { Low: 0, Moderate: 1, High: 2 },
-    smoking_status: { Never: 0, Former: 1, Current: 2 },
+    physical_activity_level: { 'Sedentary': 0, 'Light Activity': 1, 'Moderate Activity': 2, 'Active': 3 },
+    stress_level: { 'Low': 0, 'Moderate': 1, 'High': 2 },
+    fried_food_consumption: { 'Low': 0, 'Moderate': 1, 'High': 2 },
+    family_history_heart: { 'No': 0, 'Yes': 1 },
+    family_history_diabetes: { 'No': 0, 'Yes': 1 },
+    chest_discomfort: { 'Not Applicable': 0, 'Moderate': 1, 'Often': 2 },
+    salt_intake_level: { 'Low': 0, 'Moderate': 1, 'High': 2 },
+    sugar_intake_level: { 'Low': 0, 'Moderate': 1, 'High': 2 },
+    water_intake_liters: { '< 1 Litre': 0.5, '1 - 2 Litres': 1.5, '3 - 4 Litres': 3.5, '> 4 Litres': 4.5 },
+    excessive_thirst_fatigue: { 'Low': 0, 'Moderate': 1, 'High': 2 },
+    smoking_status: { 'Never': 0, 'Former': 1, 'Current': 2 },
 };
 
 /* ─────────────────────────────────────────────
@@ -26,17 +26,18 @@ const ENC = {
 // Fields in the form state that must be filled (BMI and WHtR excluded)
 const REQUIRED_FIELDS = [
     'age', 'sex', 'height_cm', 'weight_kg', 'waist_cm',
-    'physical_activity', 'bedtime', 'wakeup',
+    'physical_activity_level', 'bedtime', 'wakeupTime',
     'stress_level', 'occupation',
-    'fried_food', 'family_history_heart', 'family_history_diab',
-    'chest_discomfort', 'salt_intake', 'sugar_intake',
-    'water_intake', 'excessive_thirst', 'smoking_status',
+    'fried_food_consumption', 'family_history_heart', 'family_history_diabetes',
+    'chest_discomfort', 'salt_intake_level', 'sugar_intake_level',
+    'water_intake_liters', 'excessive_thirst_fatigue', 'smoking_status',
 ];
 
 function validate(form) {
     const errors = {};
     REQUIRED_FIELDS.forEach((field) => {
-        if (!form[field] || String(form[field]).trim() === '') {
+        const val = form[field];
+        if (val === undefined || val === null || String(val).trim() === '') {
             errors[field] = 'This field is required';
         }
     });
@@ -46,10 +47,10 @@ function validate(form) {
 /* ─────────────────────────────────────────────
    Sleep helpers
 ───────────────────────────────────────────── */
-function calcSleepHours(bedtime, wakeup) {
-    if (!bedtime || !wakeup) return null;
+function calcSleepHours(bedtime, wakeupTime) {
+    if (!bedtime || !wakeupTime) return null;
     const [bh, bm] = bedtime.split(':').map(Number);
-    const [wh, wm] = wakeup.split(':').map(Number);
+    const [wh, wm] = wakeupTime.split(':').map(Number);
     let bedMins = bh * 60 + bm;
     let wakeMins = wh * 60 + wm;
     if (wakeMins <= bedMins) wakeMins += 24 * 60; // crosses midnight
@@ -316,11 +317,11 @@ function Section({ icon, title, subtitle }) {
 const INITIAL = {
     age: '', sex: '',
     height_cm: '', weight_kg: '', waist_cm: '', BMI: '',
-    physical_activity: '', bedtime: '', wakeup: '',
+    physical_activity_level: '', bedtime: '', wakeupTime: '',
     stress_level: '', occupation: '',
-    family_history_heart: '', family_history_diab: '',
-    smoking_status: '', fried_food: '', chest_discomfort: '',
-    salt_intake: '', sugar_intake: '', water_intake: '', excessive_thirst: '',
+    family_history_heart: '', family_history_diabetes: '',
+    smoking_status: '', fried_food_consumption: '', chest_discomfort: '',
+    salt_intake_level: '', sugar_intake_level: '', water_intake_liters: '', excessive_thirst_fatigue: '',
 };
 
 const InputForm = () => {
@@ -361,8 +362,8 @@ const InputForm = () => {
 
     /* Auto-calc sleep hours */
     useEffect(() => {
-        setSleepHours(calcSleepHours(form.bedtime, form.wakeup));
-    }, [form.bedtime, form.wakeup]);
+        setSleepHours(calcSleepHours(form.bedtime, form.wakeupTime));
+    }, [form.bedtime, form.wakeupTime]);
 
     /* Real-time error clearing on change */
     const handleChange = useCallback((e) => {
@@ -416,27 +417,57 @@ const InputForm = () => {
                 height_cm: parseFloat(form.height_cm) || 0,
                 weight_kg: parseFloat(form.weight_kg) || 0,
                 waist_cm: parseFloat(form.waist_cm) || 0,
-                BMI: parseFloat(form.BMI) || 0,
-                WHR: parseFloat(WHtR) || 0,
-                physical_activity: ENC.physical_activity[form.physical_activity] ?? 0,
+                physical_activity_level: ENC.physical_activity_level[form.physical_activity_level] ?? 0,
                 sleep_hours: sleepHours ?? 0,
                 stress_level: ENC.stress_level[form.stress_level] ?? 0,
                 family_history_heart: ENC.family_history_heart[form.family_history_heart] ?? 0,
-                family_history_diab: ENC.family_history_diab[form.family_history_diab] ?? 0,
+                family_history_diabetes: ENC.family_history_diabetes[form.family_history_diabetes] ?? 0,
                 smoking_status: ENC.smoking_status[form.smoking_status] ?? 0,
-                fried_food: ENC.fried_food[form.fried_food] ?? 0,
+                fried_food_consumption: ENC.fried_food_consumption[form.fried_food_consumption] ?? 0,
                 chest_discomfort: ENC.chest_discomfort[form.chest_discomfort] ?? 0,
-                salt_intake: ENC.salt_intake[form.salt_intake] ?? 0,
-                sugar_intake: ENC.sugar_intake[form.sugar_intake] ?? 0,
-                water_intake: ENC.water_intake[form.water_intake] ?? 0,
-                excessive_thirst: ENC.excessive_thirst[form.excessive_thirst] ?? 0,
+                salt_intake_level: ENC.salt_intake_level[form.salt_intake_level] ?? 0,
+                sugar_intake_level: ENC.sugar_intake_level[form.sugar_intake_level] ?? 0,
+                water_intake_liters: ENC.water_intake_liters[form.water_intake_liters] ?? 0.5,
+                excessive_thirst_fatigue: ENC.excessive_thirst_fatigue[form.excessive_thirst_fatigue] ?? 0,
+                BMI: parseFloat(form.BMI) || 0,
+                WHR: parseFloat(WHtR) || 0,
             };
 
-            const results = await submitPrediction(payload);
-            navigate('/results', { state: { results, originalData: payload } });
+            const data = await predictRisk(payload);
+
+            // Save results to sessionStorage
+            sessionStorage.setItem('vitalResults', JSON.stringify(data));
+
+            // Auto-send alert if any risk is high
+            if (data.heart_risk_percent > 70 ||
+                data.diabetes_risk_percent > 70 ||
+                data.obesity_assessment?.score > 70) {
+                // Try to send alert (user may not have set family emails)
+                try {
+                    await sendAlert(
+                        "User",
+                        data.heart_risk_percent,
+                        data.diabetes_risk_percent,
+                        data.obesity_assessment?.score || 0,
+                        [])
+                } catch (e) {
+                    console.log("Alert notification not sent:", e)
+                }
+            }
+
+            navigate('/results', { state: { results: data, originalData: payload } });
         } catch (err) {
             console.error(err);
-            alert('Failed to submit prediction. Make sure backend is running on port 8000.');
+            const errorMsg = err.message || 'Failed to submit prediction';
+            if (errorMsg.includes('Cannot connect')) {
+                alert('Cannot connect to server. Make sure backend is running on 127.0.0.1:8000 and execute: python -m uvicorn main:app --reload');
+            } else if (errorMsg.includes('Invalid input')) {
+                alert('Invalid input data. Please check your form values.');
+            } else if (errorMsg.includes('Prediction failed')) {
+                alert('Prediction failed. Please check your inputs.');
+            } else {
+                alert('Something went wrong. ' + errorMsg);
+            }
         } finally {
             setLoading(false);
         }
@@ -593,10 +624,10 @@ const InputForm = () => {
                         <Section icon={icons.lifestyle} title="Lifestyle" />
 
                         <DropField
-                            label="Physical Activity" name="physical_activity"
-                            value={form.physical_activity} onChange={handleChange}
-                            options={['Sedentary', 'Light', 'Moderate', 'Active']}
-                            error={errors.physical_activity} fieldRef={ref('physical_activity')}
+                            label="Physical Activity Level" name="physical_activity_level"
+                            value={form.physical_activity_level} onChange={handleChange}
+                            options={['Sedentary', 'Light Activity', 'Moderate Activity', 'Active']}
+                            error={errors.physical_activity_level} fieldRef={ref('physical_activity_level')}
                         />
 
                         {/* Sleep — bedtime + wakeup */}
@@ -608,8 +639,8 @@ const InputForm = () => {
                                     error={errors.bedtime} fieldRef={ref('bedtime')}
                                 />
                                 <TimeField
-                                    label="Wake-up time" name="wakeup" value={form.wakeup} onChange={handleChange}
-                                    error={errors.wakeup} fieldRef={ref('wakeup')}
+                                    label="Wake-up time" name="wakeupTime" value={form.wakeupTime} onChange={handleChange}
+                                    error={errors.wakeupTime} fieldRef={ref('wakeupTime')}
                                 />
                             </div>
                             {sleepHours !== null && (
@@ -662,14 +693,14 @@ const InputForm = () => {
                         <DropField
                             label="Family History — Heart Disease" name="family_history_heart"
                             value={form.family_history_heart} onChange={handleChange}
-                            options={['Not Applicable', 'Yes']}
+                            options={['No', 'Yes']}
                             error={errors.family_history_heart} fieldRef={ref('family_history_heart')}
                         />
                         <DropField
-                            label="Family History — Diabetes" name="family_history_diab"
-                            value={form.family_history_diab} onChange={handleChange}
-                            options={['Not Applicable', 'Yes']}
-                            error={errors.family_history_diab} fieldRef={ref('family_history_diab')}
+                            label="Family History — Diabetes" name="family_history_diabetes"
+                            value={form.family_history_diabetes} onChange={handleChange}
+                            options={['No', 'Yes']}
+                            error={errors.family_history_diabetes} fieldRef={ref('family_history_diabetes')}
                         />
                         <DropField
                             label="Chest Discomfort" name="chest_discomfort"
@@ -678,38 +709,38 @@ const InputForm = () => {
                             error={errors.chest_discomfort} fieldRef={ref('chest_discomfort')}
                         />
                         <DropField
-                            label="Thirst Level" name="excessive_thirst"
-                            value={form.excessive_thirst} onChange={handleChange}
+                            label="Thirst Level" name="excessive_thirst_fatigue"
+                            value={form.excessive_thirst_fatigue} onChange={handleChange}
                             options={['Low', 'Moderate', 'High']}
-                            error={errors.excessive_thirst} fieldRef={ref('excessive_thirst')}
+                            error={errors.excessive_thirst_fatigue} fieldRef={ref('excessive_thirst_fatigue')}
                         />
 
                         {/* ──── SECTION: DIET ──── */}
                         <Section icon={icons.diet} title="Diet & Nutrition" />
 
                         <DropField
-                            label="Junk Food Consumption" name="fried_food"
-                            value={form.fried_food} onChange={handleChange}
+                            label="Junk Food Consumption" name="fried_food_consumption"
+                            value={form.fried_food_consumption} onChange={handleChange}
                             options={['Low', 'Moderate', 'High']}
-                            error={errors.fried_food} fieldRef={ref('fried_food')}
+                            error={errors.fried_food_consumption} fieldRef={ref('fried_food_consumption')}
                         />
                         <DropField
-                            label="Salt Intake" name="salt_intake"
-                            value={form.salt_intake} onChange={handleChange}
+                            label="Salt Intake" name="salt_intake_level"
+                            value={form.salt_intake_level} onChange={handleChange}
                             options={['Low', 'Moderate', 'High']}
-                            error={errors.salt_intake} fieldRef={ref('salt_intake')}
+                            error={errors.salt_intake_level} fieldRef={ref('salt_intake_level')}
                         />
                         <DropField
-                            label="Sugar Intake" name="sugar_intake"
-                            value={form.sugar_intake} onChange={handleChange}
+                            label="Sugar Intake" name="sugar_intake_level"
+                            value={form.sugar_intake_level} onChange={handleChange}
                             options={['Low', 'Moderate', 'High']}
-                            error={errors.sugar_intake} fieldRef={ref('sugar_intake')}
+                            error={errors.sugar_intake_level} fieldRef={ref('sugar_intake_level')}
                         />
                         <DropField
-                            label="Daily Water Intake" name="water_intake"
-                            value={form.water_intake} onChange={handleChange}
-                            options={['Less than 1 Litre', '1–2 Litres', '3–4 Litres', 'More than 4 Litres']}
-                            error={errors.water_intake} fieldRef={ref('water_intake')}
+                            label="Daily Water Intake" name="water_intake_liters"
+                            value={form.water_intake_liters} onChange={handleChange}
+                            options={['< 1 Litre', '1 - 2 Litres', '3 - 4 Litres', '> 4 Litres']}
+                            error={errors.water_intake_liters} fieldRef={ref('water_intake_liters')}
                         />
 
                     </div>{/* end grid */}

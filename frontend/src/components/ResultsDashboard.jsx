@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { RadialBarChart, RadialBar, PolarAngleAxis } from 'recharts';
-import { submitPrediction } from '../api';
+import { predictRisk } from '../api';
 import { Activity, Apple, Dumbbell } from 'lucide-react';
 import { STYLES } from '../utils/styles';
 
@@ -53,16 +53,41 @@ const ResultsDashboard = () => {
     const location = useLocation();
     const navigate = useNavigate();
     const [simData, setSimData] = useState(location.state?.originalData || {});
-    const [results, setResults] = useState(location.state?.results || null);
+
+    // Read results from location.state or sessionStorage
+    const [results, setResults] = useState(() => {
+        return location.state?.results ||
+            JSON.parse(sessionStorage.getItem('vitalResults') || '{}')
+    });
+
+    // Log results when they change
+    useEffect(() => {
+        if (results && Object.keys(results).length > 0) {
+            console.log("Results updated:", results);
+            const heartRisk = results.heart_risk_percent || 0;
+            const diabetesRisk = results.diabetes_risk_percent || 0;
+            const obesityRisk = results.obesity_risk_percent || 0;
+            console.log("Heart Risk:", heartRisk);
+            console.log("Diabetes Risk:", diabetesRisk);
+            console.log("Obesity Risk:", obesityRisk);
+        }
+    }, [results]);
 
     // Debounced simulation effect
     useEffect(() => {
         const timer = setTimeout(async () => {
             try {
-                const floatData = {};
-                for (const key in simData) floatData[key] = parseFloat(simData[key]) || 0.0;
+                // Use the original data and override with current slider values
+                const simulatedData = { ...simData };
 
-                const newResults = await submitPrediction(floatData);
+                // Ensure all float values
+                for (const key in simulatedData) {
+                    simulatedData[key] = parseFloat(simulatedData[key]) || 0.0;
+                }
+
+                console.log("Submitting simulation data:", simulatedData);
+                const newResults = await predictRisk(simulatedData);
+                console.log("Simulation results:", newResults);
                 setResults(newResults);
             } catch (err) {
                 console.error("Simulation error:", err);
@@ -76,9 +101,33 @@ const ResultsDashboard = () => {
         setSimData(prev => ({ ...prev, [e.target.name]: e.target.value }));
     };
 
-    if (!results) return <div className="text-center py-20">Loading Results...</div>;
+    if (!results || !results.heart_risk_percent) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-gray-950">
+                <div className="text-center">
+                    <p className="text-gray-400 mb-4">Loading results...</p>
+                    <button
+                        onClick={() => navigate('/form')}
+                        className="text-emerald-400 hover:text-emerald-300"
+                    >
+                        Back to Form
+                    </button>
+                </div>
+            </div>
+        );
+    }
 
-    const riskAssessment = results.obesity_assessment || { bmi_category: "Unknown", whr_risk: "Unknown" };
+    // Extract field values with correct names
+    const heartRisk = results.heart_risk_percent || 0;
+    const diabetesRisk = results.diabetes_risk_percent || 0;
+    const obesityScore = results.obesity_risk_percent || 0;
+    const obesityCategory = results.obesity_risk_category || "Unknown";
+    const bmiCategory = results.obesity_bmi_category || "Unknown";
+    const whtrCategory = results.obesity_whtr_category || "Unknown";
+
+    const heartFactors = results.heart_top_factors?.map(f => f.label) || ["Blood Pressure Trends", "Age Bracketing", "BMI Ratio"];
+    const diabetesFactors = results.diabetes_top_factors?.map(f => f.label) || ["Sugar Intake", "Family History", "Physical Activity"];
+    const obesityFactors = results.obesity_top_factors?.map(f => f.label) || [`BMI: ${bmiCategory}`, `WHtR: ${whtrCategory}`];
 
     return (
         <div className="max-w-6xl mx-auto w-full px-4 pt-12 pb-24">
@@ -89,25 +138,21 @@ const ResultsDashboard = () => {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
                 <Gauge
                     title="Heart Disease"
-                    score={results.heart_risk_percent}
+                    score={heartRisk}
                     icon={Activity}
-                    factors={["Blood Pressure Trends", "Age Bracketing", "BMI Ratio"]}
+                    factors={heartFactors}
                 />
                 <Gauge
                     title="Diabetes"
-                    score={results.diabetes_risk_percent}
+                    score={diabetesRisk}
                     icon={Apple}
-                    factors={["Sugar Intake", "Family History", "Physical Activity"]}
+                    factors={diabetesFactors}
                 />
                 <Gauge
                     title="Obesity Context"
-                    score={
-                        riskAssessment.whr_risk === "High" ? 85 :
-                            riskAssessment.bmi_category.includes("Obesity") ? 75 :
-                                30
-                    }
+                    score={obesityScore}
                     icon={Dumbbell}
-                    factors={[`BMI: ${riskAssessment.bmi_category}`, `WHR Risk: ${riskAssessment.whr_risk}`]}
+                    factors={obesityFactors}
                 />
             </div>
 
@@ -120,11 +165,11 @@ const ResultsDashboard = () => {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                     {[
-                        { name: 'physical_activity', label: 'Activity Level', min: 0, max: 3, step: 1 },
+                        { name: 'physical_activity_level', label: 'Activity Level', min: 0, max: 3, step: 1 },
                         { name: 'sleep_hours', label: 'Sleep Hours', min: 3, max: 12, step: 0.5 },
                         { name: 'stress_level', label: 'Stress Level', min: 0, max: 3, step: 1 },
                         { name: 'smoking_status', label: 'Smoking Status', min: 0, max: 2, step: 1 },
-                        { name: 'sugar_intake', label: 'Sugar Intake', min: 0, max: 2, step: 1 },
+                        { name: 'sugar_intake_level', label: 'Sugar Intake', min: 0, max: 2, step: 1 },
                     ].map(field => (
                         <div key={field.name}>
                             <div className="flex justify-between text-sm mb-2 text-gray-300">

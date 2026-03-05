@@ -1,11 +1,21 @@
 @echo off
-echo Starting VitalScan Backend Server...
-start cmd /k "cd c:\VITALSCAN\backend && python -m uvicorn main:app --reload"
+echo ================================
+echo   Starting VitalScan...
+echo ================================
 
-echo Starting VitalScan Frontend Server...
-start cmd /k "cd c:\VITALSCAN\frontend && npm run dev"
+start "VitalScan Backend" cmd /k "cd /d C:\Users\karthikpc\VitalScan-Ai\backend && python -m uvicorn main:app --reload"
 
-echo Both servers are starting up!
-echo Backend will be available at http://localhost:8000
-echo Frontend will be available at http://localhost:5173
+timeout /t 4 /nobreak >nul
+
+start "VitalScan Frontend" cmd /k "cd /d C:\Users\karthikpc\VitalScan-Ai\frontend && npm run dev"
+
+timeout /t 5 /nobreak >nul
+
+start "" "http://localhost:5173"
+
+echo ================================
+echo  Backend:  http://127.0.0.1:8000
+echo  Frontend: http://localhost:5173
+echo  Browser opening automatically...
+echo ================================
 pause

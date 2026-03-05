@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import { submitDietPlan } from '../api';
+import { getDietPlan } from '../api';
 import { STYLES } from '../utils/styles';
 import { CheckCircle, AlertTriangle, Lightbulb, Compass } from 'lucide-react';
 
@@ -50,12 +50,12 @@ const DietPlan = () => {
                 else if (results.obesity_assessment.bmi_category.includes("Obesity")) obs_score = 70;
             }
 
-            const dietResults = await submitDietPlan({
-                heart_risk: results?.heart_risk_percent || 0,
-                diabetes_risk: results?.diabetes_risk_percent || 0,
-                obesity_risk: obs_score,
-                medications: medications.includes('none') ? [] : medications
-            });
+            const dietResults = await getDietPlan(
+                results?.heart_risk_percent || 0,
+                results?.diabetes_risk_percent || 0,
+                obs_score,
+                medications.includes('none') ? [] : medications
+            );
             setDietPlan(dietResults);
         } catch (error) {
             console.error(error);
