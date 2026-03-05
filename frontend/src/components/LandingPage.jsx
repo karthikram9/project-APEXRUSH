@@ -122,19 +122,33 @@ export default function LandingPage() {
                     habits — <em>no lab tests needed.</em>
                 </p>
 
-                <div className="relative flex flex-col sm:flex-row gap-4 items-center">
-                    <button
-                        onClick={handleCTA}
-                        className="group px-8 py-4 text-lg font-bold rounded-2xl
-                       bg-gradient-to-r from-emerald-500 to-teal-500
-                       text-black hover:from-emerald-400 hover:to-teal-400
-                       transition-all duration-300 hover:scale-105 hover:-translate-y-1
-                       shadow-xl shadow-emerald-500/30"
-                    >
-                        Check Your Risk Now
-                        <span className="ml-2 inline-block transition-transform duration-200 group-hover:translate-x-1">→</span>
-                    </button>
-                    <span className="text-white/40 text-sm">Free · Takes only 3 minutes · No signup fees</span>
+                <div className="relative flex flex-col items-center">
+                    <div className="flex flex-row gap-4 justify-center items-center">
+                        <button
+                            onClick={handleCTA}
+                            className="group px-8 py-4 text-lg font-bold rounded-2xl
+                           bg-gradient-to-r from-emerald-500 to-teal-500
+                           text-black hover:from-emerald-400 hover:to-teal-400
+                           transition-all duration-300 hover:scale-105 hover:-translate-y-1
+                           shadow-xl shadow-emerald-500/30"
+                        >
+                            Check Your Risk Now
+                            <span className="ml-2 inline-block transition-transform duration-200 group-hover:translate-x-1">→</span>
+                        </button>
+                        <button
+                            onClick={() => navigate('/form')}
+                            className="group px-8 py-4 text-lg font-bold rounded-2xl
+                           border-2 border-emerald-500 bg-transparent text-emerald-400
+                           hover:bg-emerald-500/10 hover:text-emerald-300
+                           transition-all duration-300 hover:scale-105 hover:-translate-y-1"
+                        >
+                            Try VitalScan
+                            <span className="ml-2 inline-block transition-transform duration-200 group-hover:translate-x-1">→</span>
+                        </button>
+                    </div>
+                    <div className="mt-3 text-white/40 text-sm text-center">
+                        Free · Takes only 3 minutes · No signup fees
+                    </div>
                 </div>
 
                 {/* Scroll indicator */}

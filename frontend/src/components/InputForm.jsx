@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { submitPrediction } from '../api';
 import { Mic, MicOff, Activity, ChevronDown } from 'lucide-react';
@@ -19,6 +19,29 @@ const ENC = {
     excessive_thirst: { Low: 0, Moderate: 1, High: 2 },
     smoking_status: { Never: 0, Former: 1, Current: 2 },
 };
+
+/* ─────────────────────────────────────────────
+   Validation — fields that must be non-empty
+───────────────────────────────────────────── */
+// Fields in the form state that must be filled (BMI and WHtR excluded)
+const REQUIRED_FIELDS = [
+    'age', 'sex', 'height_cm', 'weight_kg', 'waist_cm',
+    'physical_activity', 'bedtime', 'wakeup',
+    'stress_level', 'occupation',
+    'fried_food', 'family_history_heart', 'family_history_diab',
+    'chest_discomfort', 'salt_intake', 'sugar_intake',
+    'water_intake', 'excessive_thirst', 'smoking_status',
+];
+
+function validate(form) {
+    const errors = {};
+    REQUIRED_FIELDS.forEach((field) => {
+        if (!form[field] || String(form[field]).trim() === '') {
+            errors[field] = 'This field is required';
+        }
+    });
+    return errors;
+}
 
 /* ─────────────────────────────────────────────
    Sleep helpers
@@ -85,6 +108,18 @@ function MicBtn({ onResult, className = '' }) {
 }
 
 /* ─────────────────────────────────────────────
+   Error message (shown below invalid fields)
+───────────────────────────────────────────── */
+function FieldError({ message }) {
+    if (!message) return null;
+    return (
+        <p style={{ fontSize: '12px', color: '#ef4444', marginTop: '4px' }}>
+            {message}
+        </p>
+    );
+}
+
+/* ─────────────────────────────────────────────
    Field wrapper
 ───────────────────────────────────────────── */
 function FieldWrap({ label, hint, children, wide = false }) {
@@ -102,15 +137,19 @@ function FieldWrap({ label, hint, children, wide = false }) {
 /* ─────────────────────────────────────────────
    Number Input + Mic
 ───────────────────────────────────────────── */
-function NumField({ label, name, value, onChange, placeholder, hint, readOnly, suffix }) {
+function NumField({ label, name, value, onChange, placeholder, hint, readOnly, suffix, error, fieldRef }) {
     const handleVoice = useCallback((t) => {
         const m = t.match(/[\d.]+/);
         if (m) onChange({ target: { name, value: m[0] } });
     }, [name, onChange]);
 
+    const borderClass = error
+        ? 'border-red-500/80 focus:ring-red-500/50'
+        : 'border-white/10 hover:border-white/20 focus:ring-emerald-500/60';
+
     return (
         <FieldWrap label={label} hint={hint}>
-            <div className="flex gap-2 items-center">
+            <div className="flex gap-2 items-center" ref={fieldRef}>
                 <div className="relative flex-1">
                     <input
                         type="number"
@@ -121,10 +160,10 @@ function NumField({ label, name, value, onChange, placeholder, hint, readOnly, s
                         readOnly={readOnly}
                         step="any"
                         className={`w-full bg-white/5 border rounded-xl px-4 py-3 text-white placeholder:text-gray-500
-                        focus:outline-none focus:ring-2 focus:ring-emerald-500/60 transition-all pr-14
+                        focus:outline-none focus:ring-2 transition-all pr-14
                         ${readOnly
                                 ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-300 cursor-default'
-                                : 'border-white/10 hover:border-white/20'}`}
+                                : borderClass}`}
                     />
                     {suffix && (
                         <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-500 pointer-events-none">
@@ -134,6 +173,7 @@ function NumField({ label, name, value, onChange, placeholder, hint, readOnly, s
                 </div>
                 {!readOnly && <MicBtn onResult={handleVoice} />}
             </div>
+            <FieldError message={error} />
         </FieldWrap>
     );
 }
@@ -141,24 +181,27 @@ function NumField({ label, name, value, onChange, placeholder, hint, readOnly, s
 /* ─────────────────────────────────────────────
    Dropdown + Mic
 ───────────────────────────────────────────── */
-function DropField({ label, name, value, onChange, options, hint }) {
+function DropField({ label, name, value, onChange, options, hint, error, fieldRef }) {
     const handleVoice = useCallback((t) => {
         const tl = t.toLowerCase();
         const match = options.find(o => tl.includes(o.toLowerCase()));
         if (match) onChange({ target: { name, value: match } });
     }, [name, onChange, options]);
 
+    const borderClass = error
+        ? 'border-red-500/80 focus:ring-red-500/50'
+        : 'border-white/10 hover:border-white/20 focus:ring-emerald-500/60';
+
     return (
         <FieldWrap label={label} hint={hint}>
-            <div className="flex gap-2 items-center">
+            <div className="flex gap-2 items-center" ref={fieldRef}>
                 <div className="relative flex-1">
                     <select
                         name={name}
                         value={value}
                         onChange={onChange}
-                        className="w-full appearance-none bg-white/5 border border-white/10 hover:border-white/20
-                       rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2
-                       focus:ring-emerald-500/60 transition-all cursor-pointer pr-10"
+                        className={`w-full appearance-none bg-white/5 border rounded-xl px-4 py-3 text-white
+                       focus:outline-none focus:ring-2 transition-all cursor-pointer pr-10 ${borderClass}`}
                     >
                         <option value="" disabled className="bg-[#1a1a1a]">Select…</option>
                         {options.map(o => (
@@ -169,6 +212,7 @@ function DropField({ label, name, value, onChange, options, hint }) {
                 </div>
                 <MicBtn onResult={handleVoice} />
             </div>
+            <FieldError message={error} />
         </FieldWrap>
     );
 }
@@ -176,17 +220,19 @@ function DropField({ label, name, value, onChange, options, hint }) {
 /* ─────────────────────────────────────────────
    Radio Group (Sex)
 ───────────────────────────────────────────── */
-function RadioField({ label, name, value, onChange, options }) {
+function RadioField({ label, name, value, onChange, options, error, fieldRef }) {
     return (
         <FieldWrap label={label}>
-            <div className="flex gap-3">
+            <div className="flex gap-3" ref={fieldRef}>
                 {options.map(opt => (
                     <label key={opt.value}
                         className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl border
                              cursor-pointer transition-all duration-200 font-medium text-sm
                              ${value === opt.value
                                 ? 'border-emerald-500 bg-emerald-500/10 text-emerald-300'
-                                : 'border-white/10 bg-white/5 text-gray-400 hover:border-white/20 hover:text-white'}`}
+                                : error
+                                    ? 'border-red-500/80 bg-white/5 text-gray-400 hover:border-red-400 hover:text-white'
+                                    : 'border-white/10 bg-white/5 text-gray-400 hover:border-white/20 hover:text-white'}`}
                     >
                         <input
                             type="radio"
@@ -204,6 +250,7 @@ function RadioField({ label, name, value, onChange, options }) {
                     </label>
                 ))}
             </div>
+            <FieldError message={error} />
         </FieldWrap>
     );
 }
@@ -211,7 +258,7 @@ function RadioField({ label, name, value, onChange, options }) {
 /* ─────────────────────────────────────────────
    Time Picker + Mic
 ───────────────────────────────────────────── */
-function TimeField({ label, name, value, onChange }) {
+function TimeField({ label, name, value, onChange, error, fieldRef }) {
     const handleVoice = useCallback((t) => {
         // parse "10 30 PM" or "ten thirty pm" → 22:30
         const m12 = t.match(/(\d{1,2})[\s:h](\d{0,2})?\s*(am|pm)/i);
@@ -225,20 +272,25 @@ function TimeField({ label, name, value, onChange }) {
         }
     }, [name, onChange]);
 
+    const borderClass = error
+        ? 'border-red-500/80 focus:ring-red-500/50'
+        : 'border-white/10 hover:border-white/20 focus:ring-emerald-500/60';
+
     return (
         <FieldWrap label={label}>
-            <div className="flex gap-2 items-center">
+            <div className="flex gap-2 items-center" ref={fieldRef}>
                 <input
                     type="time"
                     name={name}
                     value={value}
                     onChange={onChange}
-                    className="flex-1 bg-white/5 border border-white/10 hover:border-white/20 rounded-xl px-4 py-3
-                     text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/60 transition-all
-                     [color-scheme:dark]"
+                    className={`flex-1 bg-white/5 border rounded-xl px-4 py-3
+                     text-white focus:outline-none focus:ring-2 transition-all
+                     [color-scheme:dark] ${borderClass}`}
                 />
                 <MicBtn onResult={handleVoice} />
             </div>
+            <FieldError message={error} />
         </FieldWrap>
     );
 }
@@ -276,7 +328,13 @@ const InputForm = () => {
     const [sleepHours, setSleepHours] = useState(null);
     const [WHtR, setWHtR] = useState('');
     const [loading, setLoading] = useState(false);
+    const [errors, setErrors] = useState({});
+    const [showSummaryError, setShowSummaryError] = useState(false);
     const navigate = useNavigate();
+
+    // Refs map for auto-scroll to first invalid field
+    const fieldRefs = useRef({});
+    const summaryRef = useRef(null);
 
     /* Auto-calc BMI */
     useEffect(() => {
@@ -306,14 +364,50 @@ const InputForm = () => {
         setSleepHours(calcSleepHours(form.bedtime, form.wakeup));
     }, [form.bedtime, form.wakeup]);
 
+    /* Real-time error clearing on change */
     const handleChange = useCallback((e) => {
         const { name, value } = e.target;
         setForm(prev => ({ ...prev, [name]: value }));
-    }, []);
+        // Clear error for this field as soon as user interacts
+        if (errors[name]) {
+            setErrors(prev => {
+                const next = { ...prev };
+                delete next[name];
+                return next;
+            });
+        }
+    }, [errors]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+
+        // ── Validate all required fields ──
+        const newErrors = validate(form);
+        if (Object.keys(newErrors).length > 0) {
+            setErrors(newErrors);
+            setShowSummaryError(true);
+
+            // Scroll to summary banner first, then first invalid field
+            if (summaryRef.current) {
+                summaryRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+
+            // After a short delay, scroll to first invalid field
+            setTimeout(() => {
+                const firstField = REQUIRED_FIELDS.find(f => newErrors[f]);
+                if (firstField && fieldRefs.current[firstField]) {
+                    fieldRefs.current[firstField].scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }, 350);
+
+            return; // Do NOT call API
+        }
+
+        // All valid — clear errors and proceed
+        setErrors({});
+        setShowSummaryError(false);
         setLoading(true);
+
         try {
             // Build the payload, encoding labels → numbers
             const payload = {
@@ -348,6 +442,9 @@ const InputForm = () => {
         }
     };
 
+    // Helper to attach a ref to a field's container
+    const ref = (name) => (el) => { fieldRefs.current[name] = el; };
+
     /* ── Section icons (inline SVG, no extra dep) ── */
     const icons = {
         basics: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" /></svg>,
@@ -379,6 +476,17 @@ const InputForm = () => {
                     </div>
                 </div>
 
+                {/* ── Summary error banner ── */}
+                {showSummaryError && (
+                    <div
+                        ref={summaryRef}
+                        style={{ color: '#ef4444' }}
+                        className="mb-6 bg-red-500/10 border border-red-500/30 rounded-xl px-5 py-3 text-center font-bold text-sm"
+                    >
+                        ⚠ Please fill all required fields before evaluating.
+                    </div>
+                )}
+
                 {/* ── Form card ── */}
                 <form onSubmit={handleSubmit}
                     className="bg-white/[0.03] border border-white/[0.08] rounded-2xl p-6 md:p-8">
@@ -390,11 +498,13 @@ const InputForm = () => {
                         <NumField
                             label="Age" name="age" value={form.age} onChange={handleChange}
                             placeholder="e.g. 25" suffix="yrs"
+                            error={errors.age} fieldRef={ref('age')}
                         />
 
                         <RadioField
                             label="Sex" name="sex" value={form.sex} onChange={handleChange}
                             options={[{ label: 'Male', value: 'male' }, { label: 'Female', value: 'female' }]}
+                            error={errors.sex} fieldRef={ref('sex')}
                         />
 
                         {/* ──── SECTION: VITALS ──── */}
@@ -403,14 +513,17 @@ const InputForm = () => {
                         <NumField
                             label="Height" name="height_cm" value={form.height_cm} onChange={handleChange}
                             placeholder="e.g. 170" suffix="cm"
+                            error={errors.height_cm} fieldRef={ref('height_cm')}
                         />
                         <NumField
                             label="Weight" name="weight_kg" value={form.weight_kg} onChange={handleChange}
                             placeholder="e.g. 68" suffix="kg"
+                            error={errors.weight_kg} fieldRef={ref('weight_kg')}
                         />
                         <NumField
                             label="Waist" name="waist_cm" value={form.waist_cm} onChange={handleChange}
                             placeholder="e.g. 80" suffix="cm"
+                            error={errors.waist_cm} fieldRef={ref('waist_cm')}
                         />
 
                         {/* BMI — read-only, auto-calculated */}
@@ -483,14 +596,21 @@ const InputForm = () => {
                             label="Physical Activity" name="physical_activity"
                             value={form.physical_activity} onChange={handleChange}
                             options={['Sedentary', 'Light', 'Moderate', 'Active']}
+                            error={errors.physical_activity} fieldRef={ref('physical_activity')}
                         />
 
                         {/* Sleep — bedtime + wakeup */}
                         <div className="col-span-full sm:col-span-2 lg:col-span-2">
                             <label className="block text-sm font-medium text-gray-300 mb-1.5">Sleep Schedule</label>
                             <div className="grid grid-cols-2 gap-3">
-                                <TimeField label="Bedtime" name="bedtime" value={form.bedtime} onChange={handleChange} />
-                                <TimeField label="Wake-up time" name="wakeup" value={form.wakeup} onChange={handleChange} />
+                                <TimeField
+                                    label="Bedtime" name="bedtime" value={form.bedtime} onChange={handleChange}
+                                    error={errors.bedtime} fieldRef={ref('bedtime')}
+                                />
+                                <TimeField
+                                    label="Wake-up time" name="wakeup" value={form.wakeup} onChange={handleChange}
+                                    error={errors.wakeup} fieldRef={ref('wakeup')}
+                                />
                             </div>
                             {sleepHours !== null && (
                                 <p className="mt-2 text-sm text-emerald-400 font-medium">
@@ -506,29 +626,34 @@ const InputForm = () => {
                             label="Stress Level" name="stress_level"
                             value={form.stress_level} onChange={handleChange}
                             options={['Low', 'Moderate', 'High']}
+                            error={errors.stress_level} fieldRef={ref('stress_level')}
                         />
 
                         {/* Occupation — display only, not sent to API */}
                         <FieldWrap label="Occupation / Work Type" hint="display only">
-                            <div className="flex gap-2 items-center">
+                            <div className="flex gap-2 items-center" ref={ref('occupation')}>
                                 <input
                                     type="text"
                                     name="occupation"
                                     value={form.occupation}
                                     onChange={handleChange}
                                     placeholder="e.g. Student, Office Job, Physical Labor"
-                                    className="flex-1 bg-white/5 border border-white/10 hover:border-white/20 rounded-xl
+                                    className={`flex-1 bg-white/5 border rounded-xl
                              px-4 py-3 text-white placeholder:text-gray-500 focus:outline-none
-                             focus:ring-2 focus:ring-emerald-500/60 transition-all"
+                             focus:ring-2 transition-all ${errors.occupation
+                                            ? 'border-red-500/80 focus:ring-red-500/50'
+                                            : 'border-white/10 hover:border-white/20 focus:ring-emerald-500/60'}`}
                                 />
                                 <MicBtn onResult={(t) => handleChange({ target: { name: 'occupation', value: t } })} />
                             </div>
+                            <FieldError message={errors.occupation} />
                         </FieldWrap>
 
                         <DropField
                             label="Smoking Status" name="smoking_status"
                             value={form.smoking_status} onChange={handleChange}
                             options={['Never', 'Former', 'Current']}
+                            error={errors.smoking_status} fieldRef={ref('smoking_status')}
                         />
 
                         {/* ──── SECTION: HEALTH HISTORY ──── */}
@@ -538,21 +663,25 @@ const InputForm = () => {
                             label="Family History — Heart Disease" name="family_history_heart"
                             value={form.family_history_heart} onChange={handleChange}
                             options={['Not Applicable', 'Yes']}
+                            error={errors.family_history_heart} fieldRef={ref('family_history_heart')}
                         />
                         <DropField
                             label="Family History — Diabetes" name="family_history_diab"
                             value={form.family_history_diab} onChange={handleChange}
                             options={['Not Applicable', 'Yes']}
+                            error={errors.family_history_diab} fieldRef={ref('family_history_diab')}
                         />
                         <DropField
                             label="Chest Discomfort" name="chest_discomfort"
                             value={form.chest_discomfort} onChange={handleChange}
                             options={['Not Applicable', 'Moderate', 'Often']}
+                            error={errors.chest_discomfort} fieldRef={ref('chest_discomfort')}
                         />
                         <DropField
                             label="Thirst Level" name="excessive_thirst"
                             value={form.excessive_thirst} onChange={handleChange}
                             options={['Low', 'Moderate', 'High']}
+                            error={errors.excessive_thirst} fieldRef={ref('excessive_thirst')}
                         />
 
                         {/* ──── SECTION: DIET ──── */}
@@ -562,21 +691,25 @@ const InputForm = () => {
                             label="Junk Food Consumption" name="fried_food"
                             value={form.fried_food} onChange={handleChange}
                             options={['Low', 'Moderate', 'High']}
+                            error={errors.fried_food} fieldRef={ref('fried_food')}
                         />
                         <DropField
                             label="Salt Intake" name="salt_intake"
                             value={form.salt_intake} onChange={handleChange}
                             options={['Low', 'Moderate', 'High']}
+                            error={errors.salt_intake} fieldRef={ref('salt_intake')}
                         />
                         <DropField
                             label="Sugar Intake" name="sugar_intake"
                             value={form.sugar_intake} onChange={handleChange}
                             options={['Low', 'Moderate', 'High']}
+                            error={errors.sugar_intake} fieldRef={ref('sugar_intake')}
                         />
                         <DropField
                             label="Daily Water Intake" name="water_intake"
                             value={form.water_intake} onChange={handleChange}
                             options={['Less than 1 Litre', '1–2 Litres', '3–4 Litres', 'More than 4 Litres']}
+                            error={errors.water_intake} fieldRef={ref('water_intake')}
                         />
 
                     </div>{/* end grid */}
