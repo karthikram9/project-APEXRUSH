@@ -1,6 +1,6 @@
 import { getAuth } from 'firebase/auth'
 
-const BASE_URL = "http://127.0.0.1:8000"
+const BASE_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000"
 
 const getToken = async () => {
   const auth = getAuth()
@@ -118,4 +118,31 @@ export const sendAlert = async (
     })
   })
   return response.json()
+}
+
+export const sendFamilyAlerts = async (
+  userName,
+  familyEmails,
+  heartRisk,
+  diabetesRisk,
+  obesityRisk
+) => {
+  try {
+    const response = await fetch(`${BASE_URL}/send-alerts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_name: userName,
+        family_emails: familyEmails,
+        heart_risk: heartRisk,
+        diabetes_risk: diabetesRisk,
+        obesity_risk: obesityRisk
+      })
+    })
+    const data = await response.json()
+    return data
+  } catch (e) {
+    console.error('Alert send error:', e)
+    return { sent: false, reason: e.message }
+  }
 }

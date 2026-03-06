@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { RadialBarChart, RadialBar, PolarAngleAxis } from 'recharts';
-import { predictRisk } from '../api';
+import { predictRisk, sendFamilyAlerts } from '../api';
 import { Activity, Apple, Dumbbell } from 'lucide-react';
 import { STYLES } from '../utils/styles';
+import { collection, getDocs } from 'firebase/firestore'
+import { firebaseDB } from '../firebase'
+import { getAuth } from 'firebase/auth'
 
 const getRiskColor = (score) => {
     if (score < 40) return '#10b981'; // green-500
@@ -89,6 +92,11 @@ const ResultsDashboard = () => {
                 const newResults = await predictRisk(simulatedData);
                 console.log("Simulation results:", newResults);
                 setResults(newResults);
+                triggerFamilyAlerts(
+                    newResults.heart_risk_percent,
+                    newResults.diabetes_risk_percent,
+                    newResults.obesity_risk_percent
+                );
             } catch (err) {
                 console.error("Simulation error:", err);
             }
@@ -100,6 +108,38 @@ const ResultsDashboard = () => {
     const handleSliderChange = (e) => {
         setSimData(prev => ({ ...prev, [e.target.name]: e.target.value }));
     };
+
+    const triggerFamilyAlerts = async (heartRisk, diabetesRisk, obesityRisk) => {
+        try {
+            const auth = getAuth()
+            const user = auth.currentUser
+            if (!user) return
+
+            const snap = await getDocs(
+                collection(firebaseDB, 'users', user.uid, 'familyAlerts')
+            )
+            const emails = snap.docs.map(d => d.data().email).filter(Boolean)
+            if (emails.length === 0) return
+
+            const userName = user.displayName || user.email
+
+            const result = await sendFamilyAlerts(
+                userName,
+                emails,
+                heartRisk,
+                diabetesRisk,
+                obesityRisk
+            )
+
+            if (result.sent) {
+                console.log('Family alerts sent to:', result.sent_to)
+            } else {
+                console.log('No alert sent:', result.reason)
+            }
+        } catch (e) {
+            console.error('Alert trigger error:', e)
+        }
+    }
 
     if (!results || !results.heart_risk_percent) {
         return (

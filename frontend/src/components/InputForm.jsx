@@ -429,8 +429,6 @@ const InputForm = () => {
                 sugar_intake_level: ENC.sugar_intake_level[form.sugar_intake_level] ?? 0,
                 water_intake_liters: ENC.water_intake_liters[form.water_intake_liters] ?? 0.5,
                 excessive_thirst_fatigue: ENC.excessive_thirst_fatigue[form.excessive_thirst_fatigue] ?? 0,
-                BMI: parseFloat(form.BMI) || 0,
-                WHR: parseFloat(WHtR) || 0,
             };
 
             const data = await predictRisk(payload);
@@ -441,14 +439,14 @@ const InputForm = () => {
             // Auto-send alert if any risk is high
             if (data.heart_risk_percent > 70 ||
                 data.diabetes_risk_percent > 70 ||
-                data.obesity_assessment?.score > 70) {
+                data.obesity_risk_percent > 70) {
                 // Try to send alert (user may not have set family emails)
                 try {
                     await sendAlert(
                         "User",
                         data.heart_risk_percent,
                         data.diabetes_risk_percent,
-                        data.obesity_assessment?.score || 0,
+                        data.obesity_risk_percent || 0,
                         [])
                 } catch (e) {
                     console.log("Alert notification not sent:", e)
@@ -460,7 +458,7 @@ const InputForm = () => {
             console.error(err);
             const errorMsg = err.message || 'Failed to submit prediction';
             if (errorMsg.includes('Cannot connect')) {
-                alert('Cannot connect to server. Make sure backend is running on 127.0.0.1:8000 and execute: python -m uvicorn main:app --reload');
+                alert('Cannot connect to server. Make sure backend is running on localhost:8000 and execute: python -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload');
             } else if (errorMsg.includes('Invalid input')) {
                 alert('Invalid input data. Please check your form values.');
             } else if (errorMsg.includes('Prediction failed')) {

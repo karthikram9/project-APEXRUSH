@@ -1,22 +1,22 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { signOut } from 'firebase/auth'
+import { signOut, updateProfile } from 'firebase/auth'
 import {
     doc, getDoc, setDoc, updateDoc,
     collection, addDoc, getDocs, deleteDoc
 } from 'firebase/firestore'
 import { firebaseAuth, firebaseDB } from '../firebase'
 import {
-    Activity, User, Settings,
+    Activity, User,
     Bell, LogOut, Plus, Trash2,
     Heart, ChevronRight
 } from 'lucide-react'
+import StepTracker from './StepTracker'
 
 const NAV = [
     { id: 'profile', label: 'Profile', icon: User },
     { id: 'health', label: 'Health Data', icon: Activity },
     { id: 'family', label: 'Family Alerts', icon: Bell },
-    { id: 'settings', label: 'Settings', icon: Settings },
 ]
 
 export default function Dashboard({ user }) {
@@ -27,6 +27,7 @@ export default function Dashboard({ user }) {
     const [newContact, setNewContact] = useState({ name: '', email: '' })
     const [saving, setSaving] = useState(false)
     const [message, setMessage] = useState('')
+    const [contactMessage, setContactMessage] = useState('')
     const [settings, setSettings] = useState({
         heartThreshold: 70,
         diabetesThreshold: 70,
@@ -45,62 +46,116 @@ export default function Dashboard({ user }) {
     }, [user])
 
     const loadFamilyContacts = async () => {
-        if (!user) return
+        if (!user?.uid) return
         try {
             const snap = await getDocs(
-                collection(firebaseDB, 'users', user.uid, 'familyAlerts'))
-            setFamilyContacts(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+                collection(firebaseDB, 'users', user.uid, 'familyAlerts')
+            )
+            const contacts = snap.docs.map(d => ({
+                id: d.id,
+                ...d.data()
+            }))
+            setFamilyContacts(contacts)
+            console.log('Loaded', contacts.length, 'contacts')
         } catch (e) {
-            console.error(e)
+            console.error('Load contacts error:', e)
         }
     }
 
     const loadSettings = async () => {
-        if (!user) return
+        if (!user?.uid) return
         try {
             const snap = await getDoc(
                 doc(firebaseDB, 'users', user.uid))
-            if (snap.exists() && snap.data().settings) {
-                setSettings(s => ({ ...s, ...snap.data().settings }))
+            if (snap.exists()) {
+                const data = snap.data()
+                if (data.settings) {
+                    setSettings(prev => ({
+                        ...prev,
+                        ...data.settings
+                    }))
+                }
             }
         } catch (e) {
-            console.error(e)
+            console.error('Load settings error:', e)
         }
     }
 
     const saveProfile = async () => {
+        if (!profileData.name.trim()) {
+            setMessage('Full name cannot be empty.')
+            setTimeout(() => setMessage(''), 3000)
+            return
+        }
         setSaving(true)
+        setMessage('')
         try {
-            await updateDoc(doc(firebaseDB, 'users', user.uid), {
-                name: profileData.name
+            await setDoc(
+                doc(firebaseDB, 'users', user.uid),
+                { name: profileData.name.trim() },
+                { merge: true }
+            )
+            await updateProfile(user, {
+                displayName: profileData.name.trim()
             })
-            setMessage('Profile updated successfully.')
+            setMessage('Profile saved successfully.')
         } catch (e) {
-            setMessage('Error saving profile.')
+            console.error('Save error:', e)
+            setMessage('Failed to save. Try again.')
         }
         setSaving(false)
         setTimeout(() => setMessage(''), 3000)
     }
 
     const addContact = async () => {
-        if (!newContact.name || !newContact.email) {
-            setMessage('Please fill name and email.')
-            setTimeout(() => setMessage(''), 3000)
+        if (!newContact.name.trim()) {
+            setContactMessage('Please enter a contact name.')
+            setTimeout(() => setContactMessage(''), 3000)
+            return
+        }
+        if (!newContact.email.trim() ||
+            !newContact.email.includes('@') ||
+            !newContact.email.includes('.')) {
+            setContactMessage('Please enter a valid email address.')
+            setTimeout(() => setContactMessage(''), 3000)
+            return
+        }
+        const duplicate = familyContacts.find(
+            c => c.email.toLowerCase() ===
+                newContact.email.toLowerCase().trim()
+        )
+        if (duplicate) {
+            setContactMessage('This email is already added.')
+            setTimeout(() => setContactMessage(''), 3000)
+            return
+        }
+        if (familyContacts.length >= 5) {
+            setContactMessage('Maximum 5 contacts allowed.')
+            setTimeout(() => setContactMessage(''), 3000)
             return
         }
         try {
+            const contactData = {
+                name: newContact.name.trim(),
+                email: newContact.email.trim().toLowerCase(),
+                addedAt: new Date().toISOString()
+            }
             const ref = await addDoc(
                 collection(firebaseDB, 'users', user.uid, 'familyAlerts'),
-                { name: newContact.name, email: newContact.email })
-            setFamilyContacts(c => [...c, {
-                id: ref.id, ...newContact
-            }])
+                contactData
+            )
+            setFamilyContacts(prev => [
+                ...prev,
+                { id: ref.id, ...contactData }
+            ])
             setNewContact({ name: '', email: '' })
-            setMessage('Contact added.')
+            setContactMessage('Contact added successfully.')
+            console.log('Contact saved to Firestore:', ref.id)
         } catch (e) {
-            setMessage('Error adding contact.')
+            console.error('Add contact error:', e)
+            setContactMessage('Failed to save contact: ' + e.message)
         }
-        setTimeout(() => setMessage(''), 3000)
+        setTimeout(() => setContactMessage(''), 3000)
     }
 
     const removeContact = async (id) => {
@@ -117,12 +172,19 @@ export default function Dashboard({ user }) {
 
     const saveSettings = async () => {
         setSaving(true)
+        setMessage('')
         try {
-            await setDoc(doc(firebaseDB, 'users', user.uid),
-                { settings }, { merge: true })
-            setMessage('Settings saved.')
+            await setDoc(
+                doc(firebaseDB, 'users', user.uid),
+                { settings: settings },
+                { merge: true }
+            )
+            setMessage('Settings saved successfully.')
+            console.log('Settings saved:', settings)
         } catch (e) {
-            setMessage('Error saving settings.')
+            console.error('Settings save error:', e)
+            setMessage('Error saving settings: ' +
+                e.message)
         }
         setSaving(false)
         setTimeout(() => setMessage(''), 3000)
@@ -265,12 +327,24 @@ export default function Dashboard({ user }) {
                       bg-white/[0.03] border border-white/[0.06]
                       text-white/40 outline-none cursor-not-allowed"/>
                                 </div>
-                                <button onClick={saveProfile} disabled={saving}
-                                    className="w-full py-3 rounded-xl font-bold
-                    text-black bg-emerald-500 hover:bg-emerald-400
+                                <button
+                                    onClick={saveProfile}
+                                    disabled={saving}
+                                    className="w-full py-3.5 rounded-xl 
+                    font-bold text-base text-black 
+                    bg-emerald-500 hover:bg-emerald-400
                     disabled:opacity-60 transition-all">
                                     {saving ? 'Saving...' : 'Save Profile'}
                                 </button>
+
+                                {message && (
+                                    <p className={`text-sm mt-3 text-center font-medium
+                    ${message.includes('success')
+                                            ? 'text-emerald-400'
+                                            : 'text-red-400'}`}>
+                                        {message}
+                                    </p>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -279,59 +353,32 @@ export default function Dashboard({ user }) {
                 {/* HEALTH DATA SECTION */}
                 {active === 'health' && (
                     <div>
-                        <h1 className="text-2xl font-bold mb-8">Health Data</h1>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                            <div className="bg-white/[0.03] border border-white/[0.08]
-                rounded-2xl p-6 hover:border-emerald-500/20
-                transition-all cursor-pointer"
-                                onClick={() => navigate('/form')}>
-                                <div className="text-3xl mb-3">🫀</div>
-                                <h3 className="font-bold mb-1">Heart Disease Risk</h3>
-                                <p className="text-white/50 text-sm mb-4">
-                                    Assess your cardiovascular risk using lifestyle factors
-                                </p>
-                                <span className="text-emerald-400 text-sm font-semibold">
-                                    Start Assessment →
-                                </span>
-                            </div>
-                            <div className="bg-white/[0.03] border border-white/[0.08]
-                rounded-2xl p-6 hover:border-blue-500/20
-                transition-all cursor-pointer"
-                                onClick={() => navigate('/form')}>
-                                <div className="text-3xl mb-3">🩸</div>
-                                <h3 className="font-bold mb-1">Diabetes Risk</h3>
-                                <p className="text-white/50 text-sm mb-4">
-                                    Check your Type 2 Diabetes risk score instantly
-                                </p>
-                                <span className="text-blue-400 text-sm font-semibold">
-                                    Start Assessment →
-                                </span>
-                            </div>
-                            <div className="bg-white/[0.03] border border-white/[0.08]
-                rounded-2xl p-6 hover:border-yellow-500/20
-                transition-all cursor-pointer"
-                                onClick={() => navigate('/form')}>
-                                <div className="text-3xl mb-3">⚖️</div>
-                                <h3 className="font-bold mb-1">Obesity Risk</h3>
-                                <p className="text-white/50 text-sm mb-4">
-                                    WHO-validated BMI and body composition analysis
-                                </p>
-                                <span className="text-yellow-400 text-sm font-semibold">
-                                    Start Assessment →
-                                </span>
-                            </div>
-                            <div className="bg-emerald-500/5 border border-emerald-500/20
-                rounded-2xl p-6 cursor-pointer"
-                                onClick={() => navigate('/form')}>
-                                <div className="text-3xl mb-3">🚀</div>
-                                <h3 className="font-bold mb-1">Full Assessment</h3>
-                                <p className="text-white/50 text-sm mb-4">
-                                    Complete all 3 risk scores in one 3-minute session
-                                </p>
-                                <span className="text-emerald-400 text-sm font-semibold">
-                                    Begin Now →
-                                </span>
-                            </div>
+                        <h1 className="text-2xl font-bold mb-2">
+                            Health Activity
+                        </h1>
+                        <p className="text-white/50 text-sm mb-6">
+                            Every step counts. VitalScan monitors your movement, rewards consistency, and turns daily habits into real health progress.
+                        </p>
+
+                        <StepTracker user={user} />
+
+                        <div className="mt-8 bg-emerald-500/5 
+                            border border-emerald-500/20 
+                            rounded-2xl p-6 text-center">
+                            <p className="text-3xl mb-3">🚀</p>
+                            <h3 className="font-bold text-lg mb-2">
+                                Full Health Assessment
+                            </h3>
+                            <p className="text-white/50 text-sm mb-5">
+                                Get AI-powered risk scores for Heart Disease, Diabetes and Obesity in just 3 minutes.
+                            </p>
+                            <button
+                                onClick={() => navigate('/form')}
+                                className="px-8 py-3 rounded-xl 
+                                    font-bold text-black bg-emerald-500 
+                                    hover:bg-emerald-400 transition-all">
+                                Start Full Assessment →
+                            </button>
                         </div>
                     </div>
                 )}
@@ -378,6 +425,14 @@ export default function Dashboard({ user }) {
                                 <Plus size={16} />
                                 Add Contact
                             </button>
+                            {contactMessage && (
+                                <p className={`text-sm mt-3 font-medium
+                  ${contactMessage.includes('success')
+                                        ? 'text-emerald-400'
+                                        : 'text-red-400'}`}>
+                                    {contactMessage}
+                                </p>
+                            )}
                         </div>
 
                         {/* Contacts list */}
@@ -414,79 +469,7 @@ export default function Dashboard({ user }) {
                     </div>
                 )}
 
-                {/* SETTINGS SECTION */}
-                {active === 'settings' && (
-                    <div>
-                        <h1 className="text-2xl font-bold mb-8">Settings</h1>
 
-                        <div className="bg-white/[0.03] border border-white/[0.08]
-              rounded-2xl p-6 mb-6">
-                            <h3 className="font-semibold mb-6">
-                                Health Alert Thresholds
-                            </h3>
-                            <p className="text-white/50 text-sm mb-6">
-                                Alert emails are sent when risk scores exceed these values.
-                            </p>
-
-                            {[
-                                { key: 'heartThreshold', label: 'Heart Disease Threshold' },
-                                { key: 'diabetesThreshold', label: 'Diabetes Risk Threshold' },
-                                { key: 'obesityThreshold', label: 'Obesity Risk Threshold' },
-                            ].map(field => (
-                                <div key={field.key} className="mb-6">
-                                    <div className="flex justify-between mb-2 text-sm">
-                                        <span className="text-white/70">{field.label}</span>
-                                        <span className="text-emerald-400 font-bold">
-                                            {settings[field.key]}%
-                                        </span>
-                                    </div>
-                                    <input type="range" min="50" max="90" step="5"
-                                        value={settings[field.key]}
-                                        onChange={e => setSettings(s => ({
-                                            ...s, [field.key]: Number(e.target.value)
-                                        }))}
-                                        className="w-full accent-emerald-500 h-2
-                      rounded-lg appearance-none bg-white/10"/>
-                                </div>
-                            ))}
-                        </div>
-
-                        <div className="bg-white/[0.03] border border-white/[0.08]
-              rounded-2xl p-6 mb-6">
-                            <h3 className="font-semibold mb-4">Notifications</h3>
-                            <label className="flex items-center justify-between
-                cursor-pointer">
-                                <div>
-                                    <p className="text-sm font-medium">Email Notifications</p>
-                                    <p className="text-white/40 text-xs mt-0.5">
-                                        Receive alerts when risk scores are high
-                                    </p>
-                                </div>
-                                <div
-                                    onClick={() => setSettings(s => ({
-                                        ...s,
-                                        emailNotifications: !s.emailNotifications
-                                    }))}
-                                    className={`w-11 h-6 rounded-full transition-all
-                    cursor-pointer relative
-                    ${settings.emailNotifications
-                                            ? 'bg-emerald-500' : 'bg-white/20'}`}>
-                                    <div className={`w-4 h-4 rounded-full bg-white
-                    absolute top-1 transition-all
-                    ${settings.emailNotifications
-                                            ? 'left-6' : 'left-1'}`} />
-                                </div>
-                            </label>
-                        </div>
-
-                        <button onClick={saveSettings} disabled={saving}
-                            className="w-full py-3 rounded-xl font-bold text-black
-                bg-emerald-500 hover:bg-emerald-400
-                disabled:opacity-60 transition-all">
-                            {saving ? 'Saving...' : 'Save Settings'}
-                        </button>
-                    </div>
-                )}
             </main>
         </div>
     )

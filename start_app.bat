@@ -3,7 +3,7 @@ echo ================================
 echo   Starting VitalScan...
 echo ================================
 
-start "VitalScan Backend" cmd /k "cd /d C:\Users\karthikpc\VitalScan-Ai\backend && python -m uvicorn main:app --reload"
+start "VitalScan Backend" cmd /k "cd /d C:\Users\karthikpc\VitalScan-Ai\backend && python -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload"
 
 timeout /t 4 /nobreak >nul
 

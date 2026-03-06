@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, Request, Depends
+from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -12,6 +13,7 @@ from services.prediction import (
     get_obesity_risk_score,
     get_all_predictions)
 from services.diet import generate_diet_plan
+from services.alerts import send_family_alerts
 import firebase_admin
 from firebase_admin import credentials, firestore, auth
 import redis
@@ -37,10 +39,11 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",
+        "http://localhost:5175",
         "http://localhost:5174",
         "http://127.0.0.1:5173",
         "http://localhost:3000",
-        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3000"
 
     ],
     allow_credentials=True,
@@ -334,3 +337,20 @@ This alert was sent because {user_name} added your email for family health monit
     except Exception as e:
         print("[X] ALERT ERROR:", str(e))
         raise HTTPException(status_code=500, detail=str(e))
+class AlertRequest(BaseModel):
+    user_name: str
+    family_emails: list[str]
+    heart_risk: float
+    diabetes_risk: float
+    obesity_risk: float
+
+@app.post("/send-alerts")
+async def send_alerts(request: AlertRequest):
+    result = send_family_alerts(
+        user_name=request.user_name,
+        family_emails=request.family_emails,
+        heart_risk=request.heart_risk,
+        diabetes_risk=request.diabetes_risk,
+        obesity_risk=request.obesity_risk
+    )
+    return result
