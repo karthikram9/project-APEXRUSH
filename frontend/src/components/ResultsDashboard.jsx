@@ -2,11 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { RadialBarChart, RadialBar, PolarAngleAxis } from 'recharts';
 import { predictRisk, sendFamilyAlerts } from '../api';
-import { Activity, Apple, Dumbbell } from 'lucide-react';
+import { Activity, Apple, Dumbbell, Download } from 'lucide-react';
 import { STYLES } from '../utils/styles';
 import { collection, getDocs } from 'firebase/firestore'
 import { firebaseDB } from '../firebase'
 import { getAuth } from 'firebase/auth'
+import { sendAlertEmails } from '../utils/emailService'
+import { generateHealthReport } from '../utils/reportGenerator'
 
 const getRiskColor = (score) => {
     if (score < 40) return '#10b981'; // green-500
@@ -73,19 +75,24 @@ const ResultsDashboard = () => {
             console.log("Heart Risk:", heartRisk);
             console.log("Diabetes Risk:", diabetesRisk);
             console.log("Obesity Risk:", obesityRisk);
+            triggerAlertEmails(heartRisk, diabetesRisk, obesityRisk);
         }
     }, [results]);
 
-    // Debounced simulation effect
+    // Debounced simulation effect — only runs when simData has real form data
     useEffect(() => {
+        // If simData is empty (direct page load / refresh), skip the API call
+        if (!simData || Object.keys(simData).length === 0) return;
+
         const timer = setTimeout(async () => {
             try {
                 // Use the original data and override with current slider values
                 const simulatedData = { ...simData };
 
-                // Ensure all float values
+                // Ensure all numeric fields are proper numbers (not NaN/null)
                 for (const key in simulatedData) {
-                    simulatedData[key] = parseFloat(simulatedData[key]) || 0.0;
+                    const parsed = parseFloat(simulatedData[key]);
+                    simulatedData[key] = isNaN(parsed) ? 0 : parsed;
                 }
 
                 console.log("Submitting simulation data:", simulatedData);
@@ -93,6 +100,11 @@ const ResultsDashboard = () => {
                 console.log("Simulation results:", newResults);
                 setResults(newResults);
                 triggerFamilyAlerts(
+                    newResults.heart_risk_percent,
+                    newResults.diabetes_risk_percent,
+                    newResults.obesity_risk_percent
+                );
+                triggerAlertEmails(
                     newResults.heart_risk_percent,
                     newResults.diabetes_risk_percent,
                     newResults.obesity_risk_percent
@@ -107,6 +119,36 @@ const ResultsDashboard = () => {
 
     const handleSliderChange = (e) => {
         setSimData(prev => ({ ...prev, [e.target.name]: e.target.value }));
+    };
+
+    const handleDownloadReport = () => {
+        try {
+            console.log("Starting report generation...");
+            const auth = getAuth();
+            const user = auth.currentUser;
+
+            // Ensure we have scores, fallback to 0
+            const heart = results?.heart_risk_percent ?? 0;
+            const diabetes = results?.diabetes_risk_percent ?? 0;
+            const obesity = results?.obesity_risk_percent ?? 0;
+
+            // Use current simData for inputs as it's the most up-to-date
+            const inputsData = simData && Object.keys(simData).length > 0 ? simData : (location.state?.originalData || {});
+
+            generateHealthReport({
+                userName: user?.displayName || user?.email || 'VitalScan User',
+                userEmail: user?.email || 'Not provided',
+                heartRisk: heart,
+                diabetesRisk: diabetes,
+                obesityRisk: obesity,
+                inputs: inputsData,
+                generatedAt: new Date().toISOString(),
+            });
+            console.log("Report generation call completed.");
+        } catch (err) {
+            console.error("PDF Generate Error:", err);
+            alert("Failed to generate report: " + err.message);
+        }
     };
 
     const triggerFamilyAlerts = async (heartRisk, diabetesRisk, obesityRisk) => {
@@ -135,6 +177,43 @@ const ResultsDashboard = () => {
                 console.log('Family alerts sent to:', result.sent_to)
             } else {
                 console.log('No alert sent:', result.reason)
+            }
+        } catch (e) {
+            console.error('Alert trigger error:', e)
+        }
+    }
+
+    const triggerAlertEmails = async (heartRisk, diabetesRisk, obesityRisk) => {
+        try {
+            const auth = getAuth()
+            const user = auth.currentUser
+            if (!user) return
+
+            const userName = user.displayName || 'VitalScan User'
+            const userEmail = user.email
+
+            // Load family contacts from Firestore
+            const snap = await getDocs(
+                collection(firebaseDB, 'users', user.uid, 'familyAlerts')
+            )
+            const familyContacts = snap.docs.map(d => ({
+                name: d.data().name,
+                email: d.data().email
+            })).filter(c => c.email)
+
+            const result = await sendAlertEmails(
+                userName,
+                userEmail,
+                familyContacts,
+                heartRisk,
+                diabetesRisk,
+                obesityRisk
+            )
+
+            if (result.sent) {
+                console.log('Emails sent:', result.results)
+            } else {
+                console.log('No emails sent:', result.reason)
             }
         } catch (e) {
             console.error('Alert trigger error:', e)
@@ -231,12 +310,22 @@ const ResultsDashboard = () => {
                 </div>
             </div>
 
-            <button
-                onClick={() => navigate('/diet', { state: { results } })}
-                className={STYLES.buttonSubmit}
-            >
-                Generate Diet Plan
-            </button>
+            <div className="flex flex-col sm:flex-row gap-4 mt-8">
+                <button
+                    onClick={() => navigate('/diet', { state: { results } })}
+                    className="flex-1 py-4 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl font-semibold shadow-lg shadow-emerald-500/20 transition-all active:scale-[0.98] text-lg"
+                >
+                    Generate Diet Plan
+                </button>
+
+                <button
+                    onClick={handleDownloadReport}
+                    className="flex-1 flex items-center justify-center gap-2 py-4 bg-white/5 hover:bg-white/10 border border-white/20 hover:border-emerald-500/50 text-white rounded-xl font-semibold transition-all active:scale-[0.98] text-lg"
+                >
+                    <Download size={20} />
+                    Download Lab Report
+                </button>
+            </div>
 
             <p className="text-center text-gray-500 text-sm mt-12 mb-4">
                 * Educational only. Not a medical diagnosis. Consult a doctor.
